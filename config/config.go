@@ -25,7 +25,8 @@ kafka:
     - "localhost:9092"
   consume: true
   topic: "transactions"
-  records_per_poll: 50
+  channel_size: 1000
+  records_per_poll: 5000
   consumer_name: "tx-consumer"
 `)
 
@@ -55,6 +56,7 @@ type Kafka struct {
 	Brokers        []string `koanf:"brokers"`
 	Consume        bool     `koanf:"consume"`
 	Topic          string   `koanf:"topic"`
+	ChannelSize    int      `koanf:"channel_size"`
 	RecordsPerPoll int      `koanf:"records_per_poll"`
 	ConsumerName   string   `koanf:"consumer_name"`
 }

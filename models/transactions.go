@@ -1,11 +1,5 @@
 package models
 
-type Record struct {
-	Key   []byte
-	Value []byte
-	Topic string
-}
-
 type Transaction struct {
 	TxID            string  `json:"transaction_id"`
 	UserID          string  `json:"user_id"`

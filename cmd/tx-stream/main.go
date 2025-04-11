@@ -7,10 +7,12 @@ import (
 	"os"
 	"os/signal"
 	"syscall"
+	"time"
 
 	// Local Packages
 	config "tx-stream/config"
 	kafka "tx-stream/kafka"
+	models "tx-stream/models"
 	mongodb "tx-stream/repositories/mongodb"
 	redis "tx-stream/repositories/redis"
 	txpsr "tx-stream/services/processors"
@@ -29,7 +31,7 @@ import (
 // LoadConfig loads the default configuration and overrides it with the config file
 // specified by the path defined in the config flag
 func LoadConfig() *koanf.Koanf {
-	configPathMsg := "Path to the application config file"
+	configPathMsg := "path to the application config file"
 	configPath := kingpin.Flag("config", configPathMsg).Short('c').Default("config.yml").String()
 
 	kingpin.Parse()
@@ -48,16 +50,20 @@ func main() {
 	// Unmarshalling config into struct
 	err := k.Unmarshal("", &appKonf)
 	if err != nil {
-		log.Fatalf("Error loading config: %v", err)
+		log.Fatalf("error loading config: %v", err)
 	}
 
 	// Validate the config loaded
 	if err = appKonf.Validate(); err != nil {
-		log.Fatalf("Invalid configuration: %v", err)
+		log.Fatalf("invalid configuration: %v", err)
 	}
 
 	if !appKonf.IsProdMode {
 		k.Print()
+	}
+
+	if !appKonf.Kafka.Consume {
+		log.Fatalf("kafka consumer is not enabled")
 	}
 
 	cfg := zap.NewProductionConfig()
@@ -92,21 +98,31 @@ func main() {
 	txProcessor := txpsr.NewTxProcessor(logger, txRepo)
 
 	metrics := kprom.NewMetrics("et")
-	conf := &kafka.ConsumerConfig{
-		Brokers:        appKonf.Kafka.Brokers,
-		Name:           appKonf.Kafka.ConsumerName,
-		Topic:          appKonf.Kafka.Topic,
-		RecordsPerPoll: appKonf.Kafka.RecordsPerPoll,
+	conf := &models.ConsumerConfig{
+		Brokers:               appKonf.Kafka.Brokers,
+		Name:                  appKonf.Kafka.ConsumerName,
+		Topic:                 appKonf.Kafka.Topic,
+		EachPartitionChanSize: appKonf.Kafka.ChannelSize,
+		RecordsPerPoll:        appKonf.Kafka.RecordsPerPoll,
 	}
 
 	txConsumer, err := kafka.NewTxConsumer(conf, logger, txProcessor, dlQueue, metrics)
 	if err != nil {
-		logger.Fatal("cannot create transactions consumer", zap.Error(err))
+		logger.Fatal("cannot create consumer", zap.Error(err))
 	}
 
-	if appKonf.Kafka.Consume {
+	go func() {
 		if err = txConsumer.Poll(ctx); err != nil {
 			logger.Fatal("cannot poll records from topic", zap.Error(err))
 		}
-	}
+	}()
+
+	<-ctx.Done()
+	logger.Info("shutting down...")
+
+	shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	<-shutdownCtx.Done()
+	logger.Info("shutdown complete")
 }

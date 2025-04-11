@@ -28,8 +28,11 @@ func NewTxProcessor(logger *zap.Logger, txRepo TxRepository) *TxProcessor {
 }
 
 func (p *TxProcessor) ProcessRecords(ctx context.Context, records []models.Record) error {
+	if len(records) == 0 {
+		return nil
+	}
+	
 	var txs []interface{}
-
 	for _, record := range records {
 		var tx models.Transaction
 		err := json.Unmarshal(record.Value, &tx)
